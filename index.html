@@ -1,0 +1,1258 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>お題画像ランダム提示アプリケーション</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter & Noto Sans JP -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Inter"', '"Noto Sans JP"', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    body {
+      font-family: 'Inter', 'Noto Sans JP', sans-serif;
+      background-color: #F8FAFC;
+      color: #0F172A;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* 画像の滑らかなフェードイン遷移 */
+    .prompt-media-transition {
+      opacity: 0;
+      transform: scale(0.985);
+      transition: opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+                  transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .prompt-media-transition.is-visible {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    /* カスタムスクロールバー */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #F1F5F9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #CBD5E1;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94A3B8;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-[#F8FAFC] text-slate-900 antialiased selection:bg-indigo-100 selection:text-indigo-900">
+
+  <!-- トースト通知（教員画面のフィードバック用・alert代替） -->
+  <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm w-full px-4 sm:px-0 pointer-events-none"></div>
+
+  <!-- ===================================================================== -->
+  <!-- 1. 学生用画面（極限までシンプル：画像提示エリア + お題を引くボタンのみ） -->
+  <!-- ===================================================================== -->
+  <main id="view-student" class="min-h-screen w-full flex flex-col items-center justify-center px-4 py-6 sm:px-8 sm:py-8 relative">
+
+    <!-- 右上の控えめな「教員管理」ボタン（?s=... の学生配布URL時は完全に削除/非表示） -->
+    <button id="btn-open-teacher" type="button" onclick="switchView('teacher')"
+      class="fixed top-4 right-4 z-30 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-500 hover:text-slate-800 bg-white/80 hover:bg-white border border-slate-200/80 shadow-2xs backdrop-blur-xs transition-all cursor-pointer">
+      <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+      </svg>
+      <span>教員管理</span>
+    </button>
+
+    <!-- 中央コンテナ（1画面に美しく収まるレスポンシブ設計） -->
+    <div class="w-full max-w-4xl flex flex-col items-center justify-center gap-6 sm:gap-8">
+
+      <!-- 画像提示エリア（白いカード枠） -->
+      <div id="student-image-frame"
+        class="w-full h-[56vh] sm:h-[64vh] max-h-[640px] min-h-[260px] bg-white rounded-2xl border border-slate-200/90 shadow-xs p-3 sm:p-5 flex items-center justify-center overflow-hidden relative">
+
+        <!-- 初期プレースホルダー（シンプルな枠線とアイコンのみ） -->
+        <div id="student-placeholder"
+          class="w-full h-full rounded-xl border-2 border-dashed border-slate-200 flex items-center justify-center text-slate-300">
+          <svg class="w-14 h-14 sm:w-16 sm:h-16" fill="none" stroke="currentColor" stroke-width="1.4" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+        </div>
+
+        <!-- 提示メディア表示領域（SVGまたはIMGがここに挿入される） -->
+        <div id="student-media-stage" class="hidden w-full h-full flex items-center justify-center"></div>
+
+      </div>
+
+      <!-- お題を引くボタン（スレート/インディゴ系の引き締まったデザイン） -->
+      <button id="btn-draw-prompt" type="button" onclick="handleDrawPrompt()"
+        class="w-full sm:w-auto min-w-[230px] px-9 py-4 rounded-xl bg-slate-900 hover:bg-indigo-600 active:scale-[0.98] disabled:opacity-60 disabled:pointer-events-none text-white font-semibold text-base sm:text-lg tracking-wide shadow-sm transition-all duration-200 flex items-center justify-center gap-2.5 cursor-pointer">
+        <!-- 通常アイコン -->
+        <svg id="draw-btn-icon" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        <!-- ローディングスピナー -->
+        <svg id="draw-btn-spinner" class="hidden w-5 h-5 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <span id="draw-btn-text">お題を引く</span>
+      </button>
+
+    </div>
+  </main>
+
+  <!-- ===================================================================== -->
+  <!-- 2. 教員用管理画面                                                      -->
+  <!-- ===================================================================== -->
+  <section id="view-teacher" class="hidden min-h-screen bg-[#F8FAFC] pb-16">
+
+    <!-- 教員画面ヘッダー -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30">
+      <div class="max-w-5xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between gap-4">
+        <div class="flex items-center gap-2.5">
+          <span class="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
+          <h1 class="text-base sm:text-lg font-bold text-slate-900">教員用管理画面</h1>
+        </div>
+        <button type="button" onclick="switchView('student')"
+          class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 hover:bg-indigo-600 text-white text-xs sm:text-sm font-semibold transition-colors cursor-pointer">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          </svg>
+          <span>学生画面を確認</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="max-w-5xl mx-auto px-4 sm:px-6 pt-6 sm:pt-8 space-y-6">
+
+      <!-- ================================================================ -->
+      <!-- STEP 1：Google Drive からの画像取得                               -->
+      <!-- ================================================================ -->
+      <div class="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-2xs space-y-5">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3.5">
+          <div class="flex items-center gap-2.5">
+            <span class="px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-xs font-bold tracking-wider">STEP 1</span>
+            <h2 class="text-base sm:text-lg font-bold text-slate-900">Google Drive からの画像取得</h2>
+          </div>
+          <button type="button" onclick="resetToDemoImages()"
+            class="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer">
+            デモ画像に戻す（8枚）
+          </button>
+        </div>
+
+        <!-- 取得方式の切り替えタブ -->
+        <div class="flex flex-wrap gap-2">
+          <button type="button" id="tab-method-gas" onclick="selectGDriveMethod('gas')"
+            class="px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-indigo-600 text-white transition-colors cursor-pointer">
+            (A) Google Apps Script (GAS) WebアプリURL方式【推奨】
+          </button>
+          <button type="button" id="tab-method-api" onclick="selectGDriveMethod('api')"
+            class="px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer">
+            (B) Google Drive APIキー ＋ フォルダURL方式
+          </button>
+        </div>
+
+        <!-- (A) GAS WebアプリURL方式 -->
+        <div id="panel-method-gas" class="space-y-4 bg-slate-50 rounded-xl p-4 sm:p-5 border border-slate-200/80">
+          <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
+            APIキーを公開せずに安全に画像一覧を取得できる推奨方式です。Google Apps ScriptでデプロイしたWebアプリのURLを入力してください。
+          </p>
+          <div class="flex flex-col sm:flex-row gap-2.5">
+            <input type="url" id="input-gas-url" placeholder="https://script.google.com/macros/s/AKfycb.../exec"
+              class="flex-1 px-3.5 py-2.5 text-sm bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <button type="button" id="btn-load-gas" onclick="loadImagesFromDrive()"
+              class="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-indigo-600 text-white text-sm font-semibold transition-colors shrink-0 cursor-pointer">
+              画像を読み込む
+            </button>
+          </div>
+
+          <!-- コピーして使えるGASコードと設置手順アコーディオン -->
+          <details class="bg-white rounded-xl border border-slate-200 p-3.5">
+            <summary class="text-xs sm:text-sm font-bold text-indigo-700 cursor-pointer select-none flex items-center justify-between">
+              <span>GASコードと簡単な設置手順を表示する</span>
+              <span class="text-xs font-normal text-slate-400">クリックで開閉</span>
+            </summary>
+            <div class="mt-3.5 space-y-3 border-t border-slate-100 pt-3">
+              <ol class="list-decimal list-inside text-xs text-slate-600 space-y-1.5 leading-relaxed">
+                <li>Google Driveでお題用画像を入れたフォルダを開き、URL末尾の <code class="bg-slate-100 px-1.5 py-0.5 rounded text-slate-800">folders/【ここの文字列】</code>（フォルダID）をコピーします（フォルダ共有は「リンクを知っている全員：閲覧者」に設定）。</li>
+                <li><a href="https://script.new" target="_blank" rel="noopener noreferrer" class="text-indigo-600 underline font-medium">Google Apps Script (script.new)</a> を開き、下のコードを貼り付けてフォルダIDを書き換えます。</li>
+                <li>右上の「デプロイ」＞「新しいデプロイ」＞種類の選択「ウェブアプリ」を選び、アクセスできるユーザーを<strong>「全員」</strong>にしてデプロイします。</li>
+                <li>発行された「ウェブアプリURL」を上の入力欄に貼り付けて「画像を読み込む」を押します。</li>
+              </ol>
+              <div class="relative">
+                <pre id="gas-code-snippet" class="bg-slate-900 text-slate-100 text-[11px] sm:text-xs p-3.5 rounded-xl overflow-x-auto leading-relaxed">function doGet() {
+  const FOLDER_ID = "ここにGoogleDriveのフォルダIDを貼り付け";
+  const folder = DriveApp.getFolderById(FOLDER_ID);
+  const files = folder.getFiles();
+  const images = [];
+
+  while (files.hasNext()) {
+    const file = files.next();
+    if (file.getMimeType().indexOf("image/") === 0) {
+      images.push({
+        id: file.getId(),
+        name: file.getName()
+      });
+    }
+  }
+
+  images.sort((a, b) => a.name.localeCompare(b.name, "ja"));
+
+  return ContentService
+    .createTextOutput(JSON.stringify({ files: images }))
+    .setMimeType(ContentService.MimeType.JSON);
+}</pre>
+                <button type="button" onclick="copyToClipboard(document.getElementById('gas-code-snippet').textContent, 'GASコードをコピーしました')"
+                  class="mt-2 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold transition-colors cursor-pointer">
+                  GASコードをコピー
+                </button>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <!-- (B) Google Drive APIキー + フォルダURL方式 -->
+        <div id="panel-method-api" class="hidden space-y-4 bg-slate-50 rounded-xl p-4 sm:p-5 border border-slate-200/80">
+          <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
+            Google Cloudで発行した「Google Drive API」有効化済みのAPIキーと、「リンクを知っている全員」に共有されたGoogle DriveフォルダのURL（またはID）を入力してください。
+          </p>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Google Drive APIキー</label>
+              <input type="text" id="input-api-key" placeholder="AIzaSy..."
+                class="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Google Drive フォルダURL（またはフォルダID）</label>
+              <input type="text" id="input-folder-url" placeholder="https://drive.google.com/drive/folders/1AbCdEf..."
+                oninput="onFolderUrlInput(this.value)"
+                class="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              <p id="folder-id-preview" class="text-[11px] text-slate-500 mt-1">抽出ID: <span class="font-mono text-slate-700">未入力</span></p>
+            </div>
+          </div>
+          <div>
+            <button type="button" id="btn-load-api" onclick="loadImagesFromDrive()"
+              class="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-indigo-600 text-white text-sm font-semibold transition-colors cursor-pointer">
+              画像を読み込む
+            </button>
+          </div>
+        </div>
+
+        <!-- 読み込みステータス / エラー表示 -->
+        <div id="drive-status-banner" class="hidden rounded-xl p-3.5 text-xs sm:text-sm"></div>
+      </div>
+
+      <!-- ================================================================ -->
+      <!-- STEP 2：出題範囲のコントロール                                   -->
+      <!-- ================================================================ -->
+      <div class="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-2xs space-y-5">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3.5">
+          <div class="flex items-center gap-2.5">
+            <span class="px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-xs font-bold tracking-wider">STEP 2</span>
+            <h2 class="text-base sm:text-lg font-bold text-slate-900">出題範囲のコントロール</h2>
+          </div>
+          <div class="text-xs sm:text-sm font-bold text-indigo-700 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-200">
+            選択中: <span id="selected-count-label">0</span> / <span id="total-count-label">0</span> 枚
+          </div>
+        </div>
+
+        <!-- 抽選方式の選択ラジオボタン -->
+        <div class="bg-slate-50 rounded-xl p-4 border border-slate-200/80 space-y-2.5">
+          <div class="text-xs font-bold text-slate-700">抽選方式の選択</div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label id="radio-card-no-repeat" onclick="setDrawMode('no-repeat')"
+              class="cursor-pointer rounded-xl border-2 border-indigo-600 bg-white p-3.5 flex items-start gap-3 transition-all">
+              <input type="radio" name="drawMode" value="no-repeat" checked class="mt-0.5 text-indigo-600 focus:ring-indigo-500" />
+              <div>
+                <div class="text-xs sm:text-sm font-bold text-slate-900">重複なしで順番に出題</div>
+                <p class="text-[11px] sm:text-xs text-slate-500 mt-0.5">選択範囲を一巡するまで同じ画像が出ません</p>
+              </div>
+            </label>
+
+            <label id="radio-card-random" onclick="setDrawMode('random')"
+              class="cursor-pointer rounded-xl border-2 border-slate-200 bg-white hover:border-slate-300 p-3.5 flex items-start gap-3 transition-all">
+              <input type="radio" name="drawMode" value="random" class="mt-0.5 text-indigo-600 focus:ring-indigo-500" />
+              <div>
+                <div class="text-xs sm:text-sm font-bold text-slate-900">完全ランダム</div>
+                <p class="text-[11px] sm:text-xs text-slate-500 mt-0.5">毎回選択範囲から独立して抽選します</p>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- 一括操作ツールバー -->
+        <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-50/70 border border-slate-200/80 p-3 rounded-xl">
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" onclick="selectAllCards(true)"
+              class="px-3.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 text-xs font-semibold transition-colors cursor-pointer">
+              すべて選択
+            </button>
+            <button type="button" onclick="selectAllCards(false)"
+              class="px-3.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 text-xs font-semibold transition-colors cursor-pointer">
+              すべて解除
+            </button>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-semibold text-slate-600">ランダムに</span>
+            <input type="number" id="input-random-n" min="1" max="100" value="4"
+              class="w-16 px-2 py-1 text-center text-xs font-bold bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <span class="text-xs font-semibold text-slate-600">枚だけ選択</span>
+            <button type="button" onclick="selectRandomNCards()"
+              class="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition-colors cursor-pointer">
+              適用
+            </button>
+          </div>
+        </div>
+
+        <!-- サムネイル付き画像グリッド -->
+        <div id="teacher-thumbnail-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3.5 sm:gap-4">
+          <!-- JavaScriptで動的にカードを描画 -->
+        </div>
+      </div>
+
+      <!-- ================================================================ -->
+      <!-- STEP 3：学生配布用URLの発行                                      -->
+      <!-- ================================================================ -->
+      <div class="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-2xs space-y-4">
+        <div class="flex items-center gap-2.5 border-b border-slate-100 pb-3.5">
+          <span class="px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-xs font-bold tracking-wider">STEP 3</span>
+          <h2 class="text-base sm:text-lg font-bold text-slate-900">学生配布用URLの発行</h2>
+        </div>
+
+        <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
+          選択した画像IDと抽選方式のみをBase64URLエンコードした短い配布用URLです。このURLからアクセスすると「教員管理」ボタンは完全に非表示になり、学生には「画像提示エリア」と「お題を引くボタン」のみが表示されます。
+        </p>
+
+        <div class="flex flex-col sm:flex-row gap-2.5">
+          <input type="text" id="output-share-url" readonly
+            class="flex-1 px-3.5 py-2.5 text-xs font-mono bg-slate-50 border border-slate-300 rounded-xl text-slate-700 focus:outline-none" />
+          <button type="button" onclick="handleCopyShareUrl()"
+            class="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-indigo-600 text-white text-xs sm:text-sm font-semibold transition-colors inline-flex items-center justify-center gap-2 shrink-0 cursor-pointer">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+            </svg>
+            <span>URLをコピー</span>
+          </button>
+          <a id="btn-test-student-url" href="?s=" target="_blank" rel="noopener noreferrer"
+            class="px-4 py-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs sm:text-sm font-semibold transition-colors inline-flex items-center justify-center gap-1.5 shrink-0">
+            <span>この設定で学生画面を開く</span>
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </a>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- JavaScript ロジック                                                    -->
+  <!-- ===================================================================== -->
+  <script>
+    /**
+     * プリセットのデモ用お題画像（アート・風景・抽象・日常のワンシーン 8枚）
+     */
+    const DEMO_IMAGES = [
+      {
+        id: 'd1',
+        name: '01_静かな朝の窓辺.svg',
+        selected: true,
+        svg: `<svg viewBox="0 0 800 520" xmlns="http://www.w3.org/2000/svg" class="w-full h-full object-contain">
+          <defs>
+            <linearGradient id="g1_sky" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#FEF3C7"/>
+              <stop offset="100%" stop-color="#E0F2FE"/>
+            </linearGradient>
+          </defs>
+          <rect width="800" height="520" fill="#F1F5F9"/>
+          <!-- 窓枠 -->
+          <rect x="140" y="55" width="520" height="330" rx="12" fill="url(#g1_sky)" stroke="#CBD5E1" stroke-width="8"/>
+          <circle cx="530" cy="145" r="44" fill="#FDE68A"/>
+          <path d="M144 310 Q300 265 440 305 T656 290 L656 381 L144 381 Z" fill="#93C5FD" opacity="0.65"/>
+          <line x1="400" y1="55" x2="400" y2="385" stroke="#CBD5E1" stroke-width="6"/>
+          <line x1="140" y1="220" x2="660" y2="220" stroke="#CBD5E1" stroke-width="6"/>
+          <!-- テーブルとマグカップ・開いたノート -->
+          <rect x="80" y="385" width="640" height="135" fill="#E2E8F0"/>
+          <rect x="230" y="408" width="160" height="82" rx="6" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="2"/>
+          <line x1="310" y1="408" x2="310" y2="490" stroke="#CBD5E1" stroke-width="2"/>
+          <rect x="470" y="415" width="52" height="58" rx="8" fill="#475569"/>
+          <path d="M522 426 Q542 426 542 444 Q542 462 522 462" fill="none" stroke="#475569" stroke-width="6"/>
+          <path d="M486 398 Q480 382 490 368" fill="none" stroke="#94A3B8" stroke-width="3" stroke-linecap="round"/>
+          <path d="M504 398 Q498 382 508 368" fill="none" stroke="#94A3B8" stroke-width="3" stroke-linecap="round"/>
+        </svg>`
+      },
+      {
+        id: 'd2',
+        name: '02_幾何学のバランス.svg',
+        selected: true,
+        svg: `<svg viewBox="0 0 800 520" xmlns="http://www.w3.org/2000/svg" class="w-full h-full object-contain">
+          <rect width="800" height="520" fill="#FAFAF9"/>
+          <!-- 抽象的な均衡オブジェ -->
+          <line x1="140" y1="440" x2="660" y2="440" stroke="#1E293B" stroke-width="4" stroke-linecap="round"/>
+          <polygon points="400,320 340,440 460,440" fill="#334155"/>
+          <g transform="rotate(-11 400 320)">
+            <rect x="190" y="306" width="420" height="14" rx="7" fill="#4F46E5"/>
+            <circle cx="245" cy="264" r="42" fill="#F59E0B"/>
+            <rect x="505" y="236" width="68" height="68" rx="10" fill="#0EA5E9"/>
+            <polygon points="400,222 365,306 435,306" fill="#10B981"/>
+          </g>
+          <circle cx="245" cy="145" r="18" fill="none" stroke="#CBD5E1" stroke-width="3"/>
+          <circle cx="565" cy="120" r="28" fill="none" stroke="#CBD5E1" stroke-width="3"/>
+        </svg>`
+      },
+      {
+        id: 'd3',
+        name: '03_分岐する小道.svg',
+        selected: true,
+        svg: `<svg viewBox="0 0 800 520" xmlns="http://www.w3.org/2000/svg" class="w-full h-full object-contain">
+          <defs>
+            <linearGradient id="g3_bg" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#DBEAFE"/>
+              <stop offset="100%" stop-color="#ECFDF5"/>
+            </linearGradient>
+          </defs>
+          <rect width="800" height="520" fill="url(#g3_bg)"/>
+          <!-- 遠景の山並み -->
+          <polygon points="80,270 250,120 430,270" fill="#93C5FD" opacity="0.6"/>
+          <polygon points="340,270 540,105 740,270" fill="#60A5FA" opacity="0.5"/>
+          <!-- 丘と分岐道 -->
+          <path d="M0 265 Q400 225 800 265 L800 520 L0 520 Z" fill="#A7F3D0"/>
+          <path d="M365 520 C375 410 385 370 400 345 C340 305 240 285 160 262 L205 260 C285 280 365 300 405 330 C445 300 530 280 620 260 L660 262 C570 285 465 305 415 345 C425 370 435 410 445 520 Z" fill="#FEF3C7"/>
+          <!-- 道標 -->
+          <rect x="396" y="275" width="8" height="65" fill="#78350F"/>
+          <polygon points="355,282 400,282 400,298 355,298 345,290" fill="#F59E0B"/>
+          <polygon points="400,302 445,302 455,310 445,318 400,318" fill="#4F46E5"/>
+        </svg>`
+      },
+      {
+        id: 'd4',
+        name: '04_夜の灯台と航跡.svg',
+        selected: true,
+        svg: `<svg viewBox="0 0 800 520" xmlns="http://www.w3.org/2000/svg" class="w-full h-full object-contain">
+          <rect width="800" height="360" fill="#0F172A"/>
+          <rect y="360" width="800" height="160" fill="#1E293B"/>
+          <!-- 星空 -->
+          <circle cx="150" cy="90" r="2.5" fill="#F8FAFC"/>
+          <circle cx="280" cy="65" r="2" fill="#F8FAFC"/>
+          <circle cx="490" cy="80" r="3" fill="#F8FAFC"/>
+          <circle cx="660" cy="110" r="2" fill="#F8FAFC"/>
+          <!-- 灯台の光線 -->
+          <polygon points="235,175 780,95 780,265" fill="#FEF08A" opacity="0.22"/>
+          <!-- 岬と灯台 -->
+          <path d="M90 360 Q180 315 310 360 Z" fill="#334155"/>
+          <polygon points="205,335 215,195 245,195 255,335" fill="#F8FAFC"/>
+          <rect x="212" y="235" width="36" height="22" fill="#EF4444"/>
+          <rect x="208" y="280" width="44" height="22" fill="#EF4444"/>
+          <rect x="213" y="168" width="34" height="27" rx="4" fill="#FDE047"/>
+          <polygon points="207,168 230,146 253,168" fill="#EF4444"/>
+          <!-- 海面の光の反射 -->
+          <ellipse cx="520" cy="405" rx="110" ry="6" fill="#FEF08A" opacity="0.35"/>
+          <ellipse cx="580" cy="440" rx="150" ry="7" fill="#FEF08A" opacity="0.25"/>
+        </svg>`
+      },
+      {
+        id: 'd5',
+        name: '05_対話する二つの椅子.svg',
+        selected: true,
+        svg: `<svg viewBox="0 0 800 520" xmlns="http://www.w3.org/2000/svg" class="w-full h-full object-contain">
+          <rect width="800" height="520" fill="#F8FAFC"/>
+          <ellipse cx="400" cy="435" rx="280" ry="28" fill="#E2E8F0"/>
+          <!-- 左の椅子（インディゴ） -->
+          <g transform="translate(215, 220)">
+            <rect x="0" y="0" width="22" height="125" rx="8" fill="#4338CA"/>
+            <rect x="0" y="105" width="110" height="20" rx="8" fill="#4F46E5"/>
+            <line x1="16" y1="125" x2="10" y2="205" stroke="#312E81" stroke-width="10" stroke-linecap="round"/>
+            <line x1="94" y1="125" x2="100" y2="205" stroke="#312E81" stroke-width="10" stroke-linecap="round"/>
+          </g>
+          <!-- 右の椅子（アンバー） -->
+          <g transform="translate(475, 220)">
+            <rect x="88" y="0" width="22" height="125" rx="8" fill="#D97706"/>
+            <rect x="0" y="105" width="110" height="20" rx="8" fill="#F59E0B"/>
+            <line x1="16" y1="125" x2="10" y2="205" stroke="#92400E" stroke-width="10" stroke-linecap="round"/>
+            <line x1="94" y1="125" x2="100" y2="205" stroke="#92400E" stroke-width="10" stroke-linecap="round"/>
+          </g>
+          <!-- 中央に浮かぶ重なり合う円 -->
+          <circle cx="378" cy="165" r="38" fill="#4F46E5" opacity="0.2"/>
+          <circle cx="422" cy="165" r="38" fill="#F59E0B" opacity="0.25"/>
+        </svg>`
+      },
+      {
+        id: 'd6',
+        name: '06_都市と自然の境界線.svg',
+        selected: true,
+        svg: `<svg viewBox="0 0 800 520" xmlns="http://www.w3.org/2000/svg" class="w-full h-full object-contain">
+          <rect width="800" height="520" fill="#EFF6FF"/>
+          <!-- 左側：ビル群 -->
+          <rect x="70" y="150" width="85" height="290" fill="#64748B"/>
+          <rect x="170" y="100" width="95" height="340" fill="#475569"/>
+          <rect x="280" y="190" width="80" height="250" fill="#94A3B8"/>
+          <rect x="190" y="130" width="18" height="22" fill="#FEF08A"/>
+          <rect x="225" y="130" width="18" height="22" fill="#FEF08A"/>
+          <rect x="190" y="175" width="18" height="22" fill="#FEF08A"/>
+          <!-- 右側：森と川 -->
+          <circle cx="500" cy="280" r="75" fill="#34D399"/>
+          <circle cx="595" cy="240" r="95" fill="#10B981"/>
+          <circle cx="685" cy="295" r="70" fill="#059669"/>
+          <rect x="495" y="340" width="14" height="100" fill="#78350F"/>
+          <rect x="590" y="320" width="16" height="120" fill="#78350F"/>
+          <!-- 地面と架け橋 -->
+          <rect y="440" width="800" height="80" fill="#CBD5E1"/>
+          <path d="M330 440 Q400 390 470 440" fill="none" stroke="#F59E0B" stroke-width="10" stroke-linecap="round"/>
+        </svg>`
+      },
+      {
+        id: 'd7',
+        name: '07_螺旋階段と光.svg',
+        selected: false,
+        svg: `<svg viewBox="0 0 800 520" xmlns="http://www.w3.org/2000/svg" class="w-full h-full object-contain">
+          <rect width="800" height="520" fill="#1E293B"/>
+          <!-- 上部の天窓の光 -->
+          <ellipse cx="400" cy="95" rx="140" ry="38" fill="#FEF9C3"/>
+          <polygon points="260,95 540,95 640,520 160,520" fill="#FEF08A" opacity="0.1"/>
+          <!-- 螺旋のステップ -->
+          <rect x="394" y="95" width="12" height="425" fill="#64748B"/>
+          <rect x="260" y="430" width="140" height="18" rx="6" fill="#E2E8F0"/>
+          <rect x="290" y="370" width="125" height="18" rx="6" fill="#CBD5E1"/>
+          <rect x="335" y="310" width="110" height="18" rx="6" fill="#94A3B8"/>
+          <rect x="395" y="250" width="115" height="18" rx="6" fill="#CBD5E1"/>
+          <rect x="405" y="190" width="130" height="18" rx="6" fill="#E2E8F0"/>
+        </svg>`
+      },
+      {
+        id: 'd8',
+        name: '08_波紋の広がり.svg',
+        selected: false,
+        svg: `<svg viewBox="0 0 800 520" xmlns="http://www.w3.org/2000/svg" class="w-full h-full object-contain">
+          <rect width="800" height="520" fill="#F0F9FF"/>
+          <ellipse cx="400" cy="290" rx="310" ry="125" fill="none" stroke="#BAE6FD" stroke-width="4"/>
+          <ellipse cx="400" cy="290" rx="235" ry="92" fill="none" stroke="#7DD3FC" stroke-width="5"/>
+          <ellipse cx="400" cy="290" rx="160" ry="62" fill="none" stroke="#38BDF8" stroke-width="6"/>
+          <ellipse cx="400" cy="290" rx="85" ry="32" fill="none" stroke="#0284C7" stroke-width="6"/>
+          <!-- 落下する一滴 -->
+          <path d="M400 130 C400 130 424 166 424 182 A24 24 0 1 1 376 182 C376 166 400 130 400 130 Z" fill="#4F46E5"/>
+        </svg>`
+      }
+    ];
+
+    /**
+     * アプリケーション状態
+     */
+    const state = {
+      isStudentDistributionMode: false, // ?s=... パラメータ付き起動時は true
+      sourceType: 'demo', // 'demo' | 'gas' | 'api'
+      gasUrl: '',
+      apiKey: '',
+      folderUrl: '',
+      folderId: '',
+      drawMode: 'no-repeat', // 'no-repeat' | 'random'
+      images: [], // { id, name, selected, svg?, primaryUrl?, fallbackUrl?, thumbPrimaryUrl?, thumbFallbackUrl? }
+      drawnIds: [], // 重複なしモード用の出題済みID履歴
+      currentImageId: null,
+      isLoadingPrompt: false
+    };
+
+    const STORAGE_KEY = 'pre_enrollment_minimal_prompt_v2';
+
+    /**
+     * Google Drive 画像URL構築ヘルパー（指定仕様厳守）
+     * メイン: https://drive.google.com/thumbnail?id=FILE_ID&sz=w1600
+     * フォールバック: https://lh3.googleusercontent.com/d/FILE_ID
+     */
+    function buildDriveImageUrls(fileId) {
+      return {
+        primaryUrl: `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w1600`,
+        fallbackUrl: `https://lh3.googleusercontent.com/d/${encodeURIComponent(fileId)}`,
+        thumbPrimaryUrl: `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w800`,
+        thumbFallbackUrl: `https://lh3.googleusercontent.com/d/${encodeURIComponent(fileId)}`
+      };
+    }
+
+    /**
+     * Base64URL エンコード / デコード（URL安全かつコンパクト）
+     */
+    function toBase64Url(obj) {
+      const json = JSON.stringify(obj);
+      const b64 = btoa(unescape(encodeURIComponent(json)));
+      return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
+    function fromBase64Url(b64url) {
+      let b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+      while (b64.length % 4 !== 0) {
+        b64 += '=';
+      }
+      const json = decodeURIComponent(escape(atob(b64)));
+      return JSON.parse(json);
+    }
+
+    /**
+     * 初期化処理
+     */
+    window.addEventListener('DOMContentLoaded', async () => {
+      const params = new URLSearchParams(window.location.search);
+      const sharedParam = params.get('s');
+
+      if (sharedParam) {
+        // 学生配布用URLモード：教員管理ボタンを完全に削除
+        state.isStudentDistributionMode = true;
+        const teacherBtn = document.getElementById('btn-open-teacher');
+        if (teacherBtn) teacherBtn.remove();
+
+        await initFromSharedParam(sharedParam);
+      } else {
+        // 通常モード：localStorageから復元
+        loadTeacherStateFromStorage();
+        syncTeacherUI();
+      }
+    });
+
+    /**
+     * 学生配布用URL (?s=...) からの設定復元
+     */
+    async function initFromSharedParam(encodedParam) {
+      const drawBtn = document.getElementById('btn-draw-prompt');
+      try {
+        const cfg = fromBase64Url(encodedParam);
+        state.drawMode = cfg.m === 'r' ? 'random' : 'no-repeat';
+        const allowedIds = Array.isArray(cfg.ids) ? cfg.ids : [];
+
+        if (cfg.t === 'd') {
+          // デモ画像セット
+          state.sourceType = 'demo';
+          state.images = DEMO_IMAGES
+            .filter((img) => allowedIds.includes(img.id))
+            .map((img) => ({ ...img, selected: true }));
+        } else if (cfg.t === 'g' || cfg.t === 'a') {
+          // Google Drive 画像セット（IDリストから即座に画像オブジェクトを構築可能）
+          state.sourceType = cfg.t === 'g' ? 'gas' : 'api';
+          state.images = allowedIds.map((fileId) => ({
+            id: fileId,
+            name: fileId,
+            selected: true,
+            ...buildDriveImageUrls(fileId)
+          }));
+
+          // バックグラウンドで一覧検証（任意）
+          if (cfg.t === 'g' && cfg.u) {
+            state.gasUrl = cfg.u;
+          } else if (cfg.t === 'a' && cfg.k && cfg.f) {
+            state.apiKey = cfg.k;
+            state.folderId = cfg.f;
+          }
+        }
+
+        if (state.images.length === 0) {
+          // 万一空の場合はデモ画像をフォールバック
+          state.images = DEMO_IMAGES.filter((img) => img.selected).map((img) => ({ ...img }));
+        }
+      } catch (err) {
+        console.error('配布URLの解析に失敗しました:', err);
+        state.images = DEMO_IMAGES.filter((img) => img.selected).map((img) => ({ ...img }));
+      } finally {
+        if (drawBtn) drawBtn.disabled = false;
+      }
+    }
+
+    /**
+     * localStorage への保存と復元
+     */
+    function saveTeacherStateToStorage() {
+      if (state.isStudentDistributionMode) return;
+      try {
+        const data = {
+          sourceType: state.sourceType,
+          gasUrl: state.gasUrl,
+          apiKey: state.apiKey,
+          folderUrl: state.folderUrl,
+          folderId: state.folderId,
+          drawMode: state.drawMode,
+          images: state.images
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      } catch (e) {
+        console.warn('localStorage保存エラー:', e);
+      }
+      updateShareUrlOutput();
+    }
+
+    function loadTeacherStateFromStorage() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          state.sourceType = parsed.sourceType || 'demo';
+          state.gasUrl = parsed.gasUrl || '';
+          state.apiKey = parsed.apiKey || '';
+          state.folderUrl = parsed.folderUrl || '';
+          state.folderId = parsed.folderId || '';
+          state.drawMode = parsed.drawMode || 'no-repeat';
+          if (Array.isArray(parsed.images) && parsed.images.length > 0) {
+            state.images = parsed.images;
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('localStorage読み込みエラー:', e);
+      }
+      state.images = DEMO_IMAGES.map((img) => ({ ...img }));
+    }
+
+    /**
+     * 画面切り替え（学生画面 <-> 教員管理画面）
+     */
+    function switchView(viewName) {
+      if (state.isStudentDistributionMode) return;
+      const studentEl = document.getElementById('view-student');
+      const teacherEl = document.getElementById('view-teacher');
+
+      if (viewName === 'teacher') {
+        studentEl.classList.add('hidden');
+        teacherEl.classList.remove('hidden');
+        syncTeacherUI();
+      } else {
+        teacherEl.classList.add('hidden');
+        studentEl.classList.remove('hidden');
+      }
+    }
+
+    /**
+     * 教員画面UI全体の同期
+     */
+    function syncTeacherUI() {
+      selectGDriveMethod(state.sourceType === 'api' ? 'api' : 'gas', true);
+      document.getElementById('input-gas-url').value = state.gasUrl;
+      document.getElementById('input-api-key').value = state.apiKey;
+      document.getElementById('input-folder-url').value = state.folderUrl || state.folderId;
+      if (state.folderId) {
+        document.getElementById('folder-id-preview').innerHTML =
+          `抽出ID: <span class="font-mono font-semibold text-indigo-700">${escapeHtml(state.folderId)}</span>`;
+      }
+      setDrawMode(state.drawMode, true);
+      renderTeacherGrid();
+      updateShareUrlOutput();
+    }
+
+    /**
+     * STEP 1：Google Drive 取得方式の切り替え
+     */
+    function selectGDriveMethod(method, skipSave = false) {
+      if (state.sourceType !== 'demo') {
+        state.sourceType = method;
+      }
+      state._activeTabMethod = method;
+
+      const tabGas = document.getElementById('tab-method-gas');
+      const tabApi = document.getElementById('tab-method-api');
+      const panelGas = document.getElementById('panel-method-gas');
+      const panelApi = document.getElementById('panel-method-api');
+
+      if (method === 'gas') {
+        tabGas.className = 'px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-indigo-600 text-white transition-colors cursor-pointer';
+        tabApi.className = 'px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer';
+        panelGas.classList.remove('hidden');
+        panelApi.classList.add('hidden');
+      } else {
+        tabApi.className = 'px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-indigo-600 text-white transition-colors cursor-pointer';
+        tabGas.className = 'px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer';
+        panelApi.classList.remove('hidden');
+        panelGas.classList.add('hidden');
+      }
+
+      if (!skipSave) saveTeacherStateToStorage();
+    }
+
+    /**
+     * フォルダURLからフォルダIDを自動抽出
+     */
+    function onFolderUrlInput(rawVal) {
+      state.folderUrl = rawVal.trim();
+      const extracted = extractDriveFolderId(state.folderUrl);
+      state.folderId = extracted;
+      const previewEl = document.getElementById('folder-id-preview');
+      if (extracted) {
+        previewEl.innerHTML = `抽出ID: <span class="font-mono font-semibold text-emerald-700">${escapeHtml(extracted)}</span>`;
+      } else {
+        previewEl.innerHTML = `抽出ID: <span class="font-mono text-slate-400">未検出</span>`;
+      }
+      saveTeacherStateToStorage();
+    }
+
+    function extractDriveFolderId(input) {
+      if (!input) return '';
+      const folderMatch = input.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+      if (folderMatch && folderMatch[1]) return folderMatch[1];
+      const idQueryMatch = input.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+      if (idQueryMatch && idQueryMatch[1]) return idQueryMatch[1];
+      if (/^[a-zA-Z0-9_-]{10,}$/.test(input)) return input;
+      return '';
+    }
+
+    /**
+     * Google Drive からの画像一覧取得（GAS方式 / Drive API方式）
+     */
+    async function loadImagesFromDrive() {
+      const method = state._activeTabMethod || 'gas';
+      const banner = document.getElementById('drive-status-banner');
+      const btnGas = document.getElementById('btn-load-gas');
+      const btnApi = document.getElementById('btn-load-api');
+
+      banner.className = 'rounded-xl p-3.5 text-xs sm:text-sm bg-slate-100 text-slate-700';
+      banner.textContent = 'Google Driveから画像一覧を取得しています...';
+      banner.classList.remove('hidden');
+      btnGas.disabled = true;
+      btnApi.disabled = true;
+
+      try {
+        let fetchedItems = [];
+
+        if (method === 'gas') {
+          const url = document.getElementById('input-gas-url').value.trim();
+          if (!url) throw new Error('GAS WebアプリURLを入力してください。');
+          state.gasUrl = url;
+
+          const res = await fetch(url, { method: 'GET' });
+          if (!res.ok) {
+            throw new Error(`GASからエラー応答が返されました (HTTP ${res.status})。アクセス権限が「全員」になっているか確認してください。`);
+          }
+          const json = await res.json();
+          const list = Array.isArray(json) ? json : (Array.isArray(json.files) ? json.files : []);
+          if (list.length === 0) {
+            throw new Error('フォルダ内に画像が見つかりませんでした。フォルダIDと共有設定をご確認ください。');
+          }
+
+          fetchedItems = list.map((item, idx) => ({
+            id: item.id,
+            name: item.name || `画像_${idx + 1}`,
+            selected: true,
+            ...buildDriveImageUrls(item.id)
+          }));
+          state.sourceType = 'gas';
+        } else {
+          const apiKey = document.getElementById('input-api-key').value.trim();
+          onFolderUrlInput(document.getElementById('input-folder-url').value);
+          if (!apiKey) throw new Error('Google Drive APIキーを入力してください。');
+          if (!state.folderId) throw new Error('有効なGoogle DriveフォルダのURLまたはフォルダIDを入力してください。');
+
+          state.apiKey = apiKey;
+          const q = encodeURIComponent(`'${state.folderId}' in parents and mimeType contains 'image/' and trashed = false`);
+          const fields = encodeURIComponent('files(id,name,mimeType)');
+          const endpoint = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=${fields}&pageSize=100&orderBy=name&key=${encodeURIComponent(apiKey)}`;
+
+          const res = await fetch(endpoint);
+          const json = await res.json();
+          if (!res.ok) {
+            const msg = json.error && json.error.message ? json.error.message : `HTTP ${res.status}`;
+            throw new Error(`Google Drive APIエラー: ${msg}（フォルダが「リンクを知っている全員」に共有されているか確認してください）`);
+          }
+
+          const files = json.files || [];
+          if (files.length === 0) {
+            throw new Error('指定されたフォルダ内に画像ファイルが見つかりませんでした。');
+          }
+
+          fetchedItems = files.map((file) => ({
+            id: file.id,
+            name: file.name,
+            selected: true,
+            ...buildDriveImageUrls(file.id)
+          }));
+          state.sourceType = 'api';
+        }
+
+        state.images = fetchedItems;
+        state.drawnIds = [];
+        renderTeacherGrid();
+        saveTeacherStateToStorage();
+
+        banner.className = 'rounded-xl p-3.5 text-xs sm:text-sm bg-emerald-50 border border-emerald-200 text-emerald-800 font-medium';
+        banner.textContent = `Google Driveから ${fetchedItems.length} 枚の画像を読み込みました。`;
+        showToast(`${fetchedItems.length} 枚の画像を読み込みました`, 'success');
+      } catch (err) {
+        banner.className = 'rounded-xl p-3.5 text-xs sm:text-sm bg-rose-50 border border-rose-200 text-rose-800 font-medium';
+        banner.textContent = err.message || '画像の読み込みに失敗しました。';
+        showToast('画像の読み込みに失敗しました', 'error');
+      } finally {
+        btnGas.disabled = false;
+        btnApi.disabled = false;
+      }
+    }
+
+    /**
+     * デモ画像に戻す
+     */
+    function resetToDemoImages() {
+      state.sourceType = 'demo';
+      state.images = DEMO_IMAGES.map((img) => ({ ...img }));
+      state.drawnIds = [];
+      const banner = document.getElementById('drive-status-banner');
+      banner.classList.add('hidden');
+      renderTeacherGrid();
+      saveTeacherStateToStorage();
+      showToast('プリセットのデモ画像（8枚）に戻しました', 'info');
+    }
+
+    /**
+     * STEP 2：出題範囲コントロールとグリッド描画
+     */
+    function setDrawMode(mode, skipSave = false) {
+      state.drawMode = mode;
+      const cardNoRepeat = document.getElementById('radio-card-no-repeat');
+      const cardRandom = document.getElementById('radio-card-random');
+
+      document.querySelector(`input[name="drawMode"][value="${mode}"]`).checked = true;
+
+      if (mode === 'no-repeat') {
+        cardNoRepeat.className = 'cursor-pointer rounded-xl border-2 border-indigo-600 bg-white p-3.5 flex items-start gap-3 transition-all';
+        cardRandom.className = 'cursor-pointer rounded-xl border-2 border-slate-200 bg-white hover:border-slate-300 p-3.5 flex items-start gap-3 transition-all';
+      } else {
+        cardRandom.className = 'cursor-pointer rounded-xl border-2 border-indigo-600 bg-white p-3.5 flex items-start gap-3 transition-all';
+        cardNoRepeat.className = 'cursor-pointer rounded-xl border-2 border-slate-200 bg-white hover:border-slate-300 p-3.5 flex items-start gap-3 transition-all';
+      }
+
+      if (!skipSave) saveTeacherStateToStorage();
+    }
+
+    function renderTeacherGrid() {
+      const grid = document.getElementById('teacher-thumbnail-grid');
+      grid.innerHTML = '';
+
+      state.images.forEach((img) => {
+        const card = document.createElement('div');
+        card.onclick = () => toggleCardSelection(img.id);
+        card.className = `group relative rounded-xl overflow-hidden cursor-pointer transition-all select-none flex flex-col ${
+          img.selected
+            ? 'border-2 border-indigo-600 ring-2 ring-indigo-600/20 bg-white shadow-xs'
+            : 'border-2 border-slate-200 bg-slate-50 opacity-60 hover:opacity-90'
+        }`;
+
+        const mediaHtml = img.svg
+          ? `<div class="w-full h-full p-2">${img.svg}</div>`
+          : `<img src="${escapeHtml(img.thumbPrimaryUrl || img.primaryUrl)}"
+                  alt="${escapeHtml(img.name)}"
+                  loading="lazy"
+                  onerror="if(!this.dataset.fb){this.dataset.fb='1';this.src='${escapeHtml(img.thumbFallbackUrl || img.fallbackUrl)}';}"
+                  class="w-full h-full object-contain p-1.5" />`;
+
+        card.innerHTML = `
+          <div class="relative aspect-4/3 bg-slate-100/80 flex items-center justify-center overflow-hidden">
+            ${mediaHtml}
+            <!-- 右上チェックマークバッジ -->
+            <div class="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center transition-all ${
+              img.selected
+                ? 'bg-indigo-600 text-white shadow-xs scale-100'
+                : 'bg-white/90 text-slate-300 border border-slate-300 scale-95'
+            }">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+          </div>
+          <div class="px-2.5 py-2 border-t border-slate-100 bg-white">
+            <p class="text-[11px] font-medium text-slate-700 truncate" title="${escapeHtml(img.name)}">
+              ${escapeHtml(img.name)}
+            </p>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+
+      const selectedCount = state.images.filter((i) => i.selected).length;
+      document.getElementById('selected-count-label').textContent = selectedCount;
+      document.getElementById('total-count-label').textContent = state.images.length;
+    }
+
+    function toggleCardSelection(id) {
+      const target = state.images.find((i) => i.id === id);
+      if (!target) return;
+      target.selected = !target.selected;
+      state.drawnIds = state.drawnIds.filter((drawnId) => drawnId !== id);
+      renderTeacherGrid();
+      saveTeacherStateToStorage();
+    }
+
+    function selectAllCards(flag) {
+      state.images.forEach((img) => {
+        img.selected = flag;
+      });
+      if (!flag) state.drawnIds = [];
+      renderTeacherGrid();
+      saveTeacherStateToStorage();
+    }
+
+    function selectRandomNCards() {
+      const inputEl = document.getElementById('input-random-n');
+      let n = parseInt(inputEl.value, 10);
+      if (isNaN(n) || n < 1) n = 1;
+      if (n > state.images.length) n = state.images.length;
+      inputEl.value = n;
+
+      // Fisher-Yates シャッフル
+      const indices = state.images.map((_, i) => i);
+      for (let i = indices.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [indices[i], indices[j]] = [indices[j], indices[i]];
+      }
+      const picked = new Set(indices.slice(0, n));
+
+      state.images.forEach((img, i) => {
+        img.selected = picked.has(i);
+      });
+      state.drawnIds = [];
+      renderTeacherGrid();
+      saveTeacherStateToStorage();
+      showToast(`ランダムに ${n} 枚を選択しました`, 'success');
+    }
+
+    /**
+     * STEP 3：コンパクトなBase64URL学生配布用URL生成
+     */
+    function updateShareUrlOutput() {
+      const selectedIds = state.images.filter((i) => i.selected).map((i) => i.id);
+      const payload = {
+        t: state.sourceType === 'gas' ? 'g' : (state.sourceType === 'api' ? 'a' : 'd'),
+        m: state.drawMode === 'random' ? 'r' : 'n',
+        ids: selectedIds
+      };
+
+      if (state.sourceType === 'gas' && state.gasUrl) {
+        payload.u = state.gasUrl;
+      } else if (state.sourceType === 'api' && state.apiKey && state.folderId) {
+        payload.k = state.apiKey;
+        payload.f = state.folderId;
+      }
+
+      const encoded = toBase64Url(payload);
+      const baseUrl = window.location.href.split('?')[0].split('#')[0];
+      const fullUrl = `${baseUrl}?s=${encoded}`;
+
+      document.getElementById('output-share-url').value = fullUrl;
+      document.getElementById('btn-test-student-url').href = fullUrl;
+    }
+
+    function handleCopyShareUrl() {
+      const selectedCount = state.images.filter((i) => i.selected).length;
+      if (selectedCount === 0) {
+        showToast('出題対象の画像が1枚も選択されていません', 'error');
+        return;
+      }
+      updateShareUrlOutput();
+      const url = document.getElementById('output-share-url').value;
+      copyToClipboard(url, '学生配布用URLをコピーしました');
+    }
+
+    function copyToClipboard(text, successMsg) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        showToast(successMsg, 'success');
+      } catch (e) {
+        showToast('コピーに失敗しました。手動で選択してコピーしてください', 'error');
+      }
+      document.body.removeChild(ta);
+    }
+
+    /**
+     * =====================================================================
+     * 学生用画面：ランダム抽選＆画像読み込み完了後の滑らかなフェードイン表示
+     * =====================================================================
+     */
+    async function handleDrawPrompt() {
+      if (state.isLoadingPrompt) return;
+
+      const pool = state.images.filter((img) => img.selected);
+      if (pool.length === 0) {
+        if (!state.isStudentDistributionMode) {
+          showToast('出題対象の画像がありません。「教員管理」から画像を選択してください', 'error');
+        }
+        return;
+      }
+
+      let candidates = pool;
+      if (state.drawMode === 'no-repeat') {
+        const unvisited = pool.filter((img) => !state.drawnIds.includes(img.id));
+        if (unvisited.length === 0) {
+          // 一巡したら履歴をリセットし、直前と同じ画像が連続しないよう配慮
+          state.drawnIds = [];
+          candidates = pool.length > 1
+            ? pool.filter((img) => img.id !== state.currentImageId)
+            : pool;
+        } else {
+          candidates = unvisited;
+        }
+      } else if (pool.length > 1 && state.currentImageId) {
+        // 完全ランダムでも連続同一を極力避けつつ自然抽選
+        candidates = pool;
+      }
+
+      const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+
+      // ローディング状態開始（ボタン軽く無効化＋スピナー）
+      setDrawButtonLoading(true);
+
+      try {
+        if (chosen.svg) {
+          // SVGデモ画像の場合：自然な短い間をおいてからフェードイン表示
+          await new Promise((resolve) => setTimeout(resolve, 180));
+          displayPromptSvg(chosen.svg);
+        } else {
+          // Google Drive画像の場合：読み込み完了後に表示（primaryUrl -> fallbackUrl自動切替）
+          const loadedImgElement = await preloadDriveImageWithFallback(
+            chosen.primaryUrl,
+            chosen.fallbackUrl
+          );
+          displayPromptImageElement(loadedImgElement);
+        }
+
+        state.currentImageId = chosen.id;
+        if (state.drawMode === 'no-repeat' && !state.drawnIds.includes(chosen.id)) {
+          state.drawnIds.push(chosen.id);
+        }
+      } catch (err) {
+        console.error('画像読み込みエラー:', err);
+      } finally {
+        setDrawButtonLoading(false);
+      }
+    }
+
+    /**
+     * Google Drive 画像プリロード（primaryUrl 失敗時に fallbackUrl へ自動フォールバック）
+     */
+    function preloadDriveImageWithFallback(primaryUrl, fallbackUrl) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.className = 'w-full h-full object-contain prompt-media-transition';
+        img.alt = '';
+
+        let triedFallback = false;
+
+        img.onload = () => {
+          resolve(img);
+        };
+
+        img.onerror = () => {
+          if (!triedFallback && fallbackUrl) {
+            triedFallback = true;
+            img.src = fallbackUrl;
+          } else {
+            reject(new Error('画像の読み込みに失敗しました'));
+          }
+        };
+
+        img.src = primaryUrl;
+      });
+    }
+
+    function displayPromptSvg(svgMarkup) {
+      const placeholder = document.getElementById('student-placeholder');
+      const stage = document.getElementById('student-media-stage');
+
+      placeholder.classList.add('hidden');
+      stage.classList.remove('hidden');
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'w-full h-full flex items-center justify-center prompt-media-transition';
+      wrapper.innerHTML = svgMarkup;
+
+      stage.innerHTML = '';
+      stage.appendChild(wrapper);
+
+      // 次フレームでフェードインクラスを付与
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          wrapper.classList.add('is-visible');
+        });
+      });
+    }
+
+    function displayPromptImageElement(imgEl) {
+      const placeholder = document.getElementById('student-placeholder');
+      const stage = document.getElementById('student-media-stage');
+
+      placeholder.classList.add('hidden');
+      stage.classList.remove('hidden');
+
+      stage.innerHTML = '';
+      stage.appendChild(imgEl);
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          imgEl.classList.add('is-visible');
+        });
+      });
+    }
+
+    function setDrawButtonLoading(isLoading) {
+      state.isLoadingPrompt = isLoading;
+      const btn = document.getElementById('btn-draw-prompt');
+      const icon = document.getElementById('draw-btn-icon');
+      const spinner = document.getElementById('draw-btn-spinner');
+
+      btn.disabled = isLoading;
+      if (isLoading) {
+        icon.classList.add('hidden');
+        spinner.classList.remove('hidden');
+      } else {
+        spinner.classList.add('hidden');
+        icon.classList.remove('hidden');
+      }
+    }
+
+    /**
+     * トースト通知（教員用画面でのフィードバック）
+     */
+    function showToast(message, type = 'info') {
+      if (state.isStudentDistributionMode) return;
+      const container = document.getElementById('toast-container');
+      const el = document.createElement('div');
+
+      const styleMap = {
+        success: 'bg-slate-900 text-white border-slate-800',
+        error: 'bg-rose-700 text-white border-rose-600',
+        info: 'bg-slate-800 text-white border-slate-700'
+      };
+
+      el.className = `pointer-events-auto px-4 py-3 rounded-xl shadow-lg border text-xs sm:text-sm font-medium transition-all duration-300 ${styleMap[type] || styleMap.info}`;
+      el.textContent = message;
+      container.appendChild(el);
+
+      setTimeout(() => {
+        el.style.opacity = '0';
+        setTimeout(() => el.remove(), 300);
+      }, 3000);
+    }
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+  </script>
+</body>
+</html>
